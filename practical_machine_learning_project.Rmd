@@ -1,0 +1,108 @@
+---
+title: "Practical Machine Learning"
+author: "Ignacio Peletier"
+date: "3/5/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+
+```{r imports-n-data, include=FALSE}
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+
+trainSet <- read.csv("./data/pml-training.csv")
+examinationSet <- read.csv("./data/pml-testing.csv")
+
+```
+
+## Data Cleaning
+
+Let's take a look at the size of the datasets and the variables we have available:
+
+```{r eda}
+dim(trainSet)
+dim(examinationSet)
+```
+
+Just to clarify, we will have 3 datasets: Train, Test and Examination. The Examination lacks the 
+main variable that we will be predicting: $classe$. The train and
+test set will both come from the file $pml-training.csv$.
+
+After removing missing values and filtering some columns we have:
+
+```{r eda-1}
+trainSet <- trainSet[, colSums(is.na(trainSet)) == 0]
+examinationSet <- examinationSet[, colSums(is.na(examinationSet)) == 0]
+
+classe <- trainSet$classe
+columns <- grepl("^X|timestamp|window", names(trainSet))
+trainSet <- trainSet[, !columns]
+trainSet <- trainSet[, sapply(trainSet, is.numeric)]
+trainSet$classe <- classe
+columns <- grepl("^X|timestamp|window", names(examinationSet))
+examinationSet <- examinationSet[, !columns]
+examinationSet <- examinationSet[, sapply(examinationSet, is.numeric)]
+
+dim(trainSet)
+dim(examinationSet)
+```
+
+## Model Training
+
+We will do a 60% to 40% splits with the original training data, this way we obtain
+both the train data and the test data.
+
+```{r sets}
+set.seed(42)
+inTrain <- createDataPartition(trainSet$classe, p=0.60, list=FALSE)
+trainData <- trainSet[inTrain, ]
+testData <- trainSet[-inTrain, ]
+```
+
+We will do a 5-fold cross validation on a Random Forest model with 50 trees:
+
+```{r cv}
+controlCV <- trainControl(method="cv", 5)
+rf <- train(classe ~ ., data=trainData, method="rf")
+rf
+```
+
+The results on the testing set are:
+
+```{r results}
+testPred <- predict(rf, testData)
+confusionMatrix(testData$classe, testPred)
+```
+We ended up with a pretty high accuracy on the testing set with a narrow $95%$ CI: $(0.9913, 0.995)$
+
+
+## Predictions in the Examination Set
+
+We now predict on the examination set, where the $classe$ are unknown:
+
+
+```{r examination}
+examination <- predict(rf, examinationSet[, -length(names(examinationSet))])
+examination
+```
+
+## Feature Importance
+
+Random Forest can be used to show feature importance, here we see which are the most relevant features:
+
+```{r featImp}
+varImp(rf)
+```
+
+Clearly, The most important feature is $roll belt$.
